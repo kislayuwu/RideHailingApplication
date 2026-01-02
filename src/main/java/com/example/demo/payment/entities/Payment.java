@@ -7,7 +7,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
-import jakarta.persistence.Version;
 
 @Entity
 public class Payment {
@@ -22,9 +21,6 @@ public class Payment {
 	private PaymentStatus status;
 
 	private String pspReference;
-
-	@Version
-	private Long version;
 
 	@Column(nullable = false, updatable = false)
 	private Instant createdAt;
@@ -67,14 +63,6 @@ public class Payment {
 
 	public void setPspReference(String pspReference) {
 		this.pspReference = pspReference;
-	}
-
-	public Long getVersion() {
-		return version;
-	}
-
-	public void setVersion(Long version) {
-		this.version = version;
 	}
 
 	public Instant getCreatedAt() {

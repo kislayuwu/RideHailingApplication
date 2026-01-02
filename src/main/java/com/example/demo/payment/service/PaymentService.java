@@ -50,62 +50,39 @@ public class PaymentService {
 
 		log.info("Starting payment for tripId={}", request.getTripId());
 
-		try {
-			Trip trip = getTripForPayment(request.getTripId());
-			Payment payment = getOrCreatePayment(trip);
-
-			if (payment.getStatus() == PaymentStatus.SUCCESS) {
-				log.info("Payment already SUCCESS for tripId={}", trip.getId());
-				return payment;
-			}
-
-			boolean success = charge(payment, request);
-
-			if (success) {
-				handlePaymentSuccess(trip, payment);
-			} else {
-				handlePaymentFailure(trip, payment);
-			}
-
-			tripRepository.save(trip);
-			Payment saved = paymentRepository.save(payment);
-
-			log.info("Payment flow completed for tripId={}, status={}", trip.getId(), saved.getStatus());
-
-			return saved;
-
-		} catch (RuntimeException ex) {
-			log.error("Payment failed for tripId={}", request.getTripId(), ex);
-			throw new PaymentException("Payment processing error", ex);
-		}
-	}
-
-	private Trip getTripForPayment(String tripId) {
-
-		Trip trip = tripRepository.findById(tripId).orElseThrow(() -> {
-			log.warn("Trip not found for tripId={}", tripId);
-			return new TripNotFoundException(tripId);
-		});
-
-		log.debug("Trip {} current status={}", tripId, trip.getStatus());
+		Trip trip = getTripForPayment(request.getTripId());
 
 		if (trip.getStatus() == TripStatus.PAID) {
-			throw new IllegalStateException("Trip already paid");
+			log.info("Trip already PAID, returning existing payment");
+			return paymentRepository.findByTripId(trip.getId())
+					.orElseThrow(() -> new PaymentException("Payment record missing for PAID trip"));
 		}
 
 		if (trip.getStatus() != TripStatus.ENDED && trip.getStatus() != TripStatus.PAYMENT_FAILED) {
 			throw new IllegalStateException("Trip not ready for payment");
 		}
 
-		return trip;
+		Payment payment = paymentRepository.findByTripId(trip.getId()).orElseGet(() -> createNewPayment(trip));
+
+		if (payment.getStatus() == PaymentStatus.SUCCESS) {
+			return payment;
+		}
+
+		boolean success = chargePSP(payment, request);
+
+		if (success) {
+			handlePaymentSuccess(trip, payment);
+		} else {
+			handlePaymentFailure(trip, payment);
+		}
+
+		tripRepository.save(trip);
+		return paymentRepository.save(payment);
 	}
 
-	private Payment getOrCreatePayment(Trip trip) {
-
-		return paymentRepository.findTopByTripIdOrderByCreatedAtDesc(trip.getId()).map(p -> {
-			log.info("Reusing existing payment {} for tripId={}", p.getId(), trip.getId());
-			return p;
-		}).orElseGet(() -> createNewPayment(trip));
+	private Trip getTripForPayment(String tripId) {
+		Trip trip = tripRepository.findByIdForPayment(tripId).orElseThrow(() -> new TripNotFoundException(tripId));
+		return trip;
 	}
 
 	private Payment createNewPayment(Trip trip) {
@@ -118,7 +95,7 @@ public class PaymentService {
 		return paymentRepository.save(payment);
 	}
 
-	private boolean charge(Payment payment, PaymentRequest request) {
+	private boolean chargePSP(Payment payment, PaymentRequest request) {
 		try {
 			log.info("Charging amount={} via method={}", payment.getAmount(), request.getMethod());
 
